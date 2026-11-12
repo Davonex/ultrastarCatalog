@@ -5,8 +5,7 @@
     <div class="song-info" th:id="'song' + ${song.uid}">
         <div class="song-info-head">
             <!-- Cover on the left (hidden if the song has no cover) -->
-            <img class="song-info-cover" th:src="@{/images/} + ${song.uid} + '.jpg'" alt=""
-                 onerror="this.style.display='none'"/>
+            <img class="song-info-cover" th:src="@{/images/} + ${song.uid} + '.jpg?w=240'" alt=""/>
             <div class="song-info-text">
                 <!-- ARTIST : TITLE -->
                 <div class="song-info-main">
@@ -25,6 +24,12 @@
                     <span class="song-info-edition" th:text="${song.edition}">Edition</span><span
                         th:if="${not #strings.isEmpty(song.edition) and not #strings.isEmpty(song.genre)}"> · </span><span
                         class="song-info-genre" th:text="${song.genre}">Genre</span>
+                </div>
+                <!-- Duet: names of the two singers when known -->
+                <div class="song-info-line song-info-duo" th:if="${song.duet}">
+                    <i class="fa-solid fa-user-group"></i>
+                    <span th:text="${#strings.isEmpty(song.duetSingers)} ? #{song.duet}
+                                   : #{song.duet} + ' : ' + ${song.duetSingers}">Duet</span>
                 </div>
                 <!-- Playlists that contain the song -->
                 <div class="song-info-line song-info-playlists" th:unless="${songPlaylists.empty}"

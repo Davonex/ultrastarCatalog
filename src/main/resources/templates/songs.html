@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<!--
+  One page of songs, used by index.html and by the infinite scroll (/?...&page=N&fragment=1).
+  "cards": the song cards (grid view)     "rows": the rows of the list view
+-->
+<th:block th:fragment="cards">
+    <div class="flip-card" th:each="song : ${songs}">
+        <div class="flip-card-inner" th:data-songid="${song.uid}">
+            <span class="duo-badge" th:if="${song.duet}" th:title="#{song.duet}"
+                  th:attr="aria-label=#{song.duet}"><i class="fa-solid fa-user-group"></i></span>
+            <button type="button" class="info-button"
+                    th:data-songid="${song.uid}"
+                    th:title="#{info.button}" th:attr="aria-label=#{info.button}"
+                    onclick="openSongInfo(event, this)"><i class="fa-solid fa-info"></i></button>
+            <i class="fa-regular fa-star favorite-icon" onclick="toggleFavorite(event, this)"></i>
+            <button type="button" class="play-button" th:unless="${lite}"
+                    th:data-songid="${song.uid}" th:data-start="${song.previewStartSeconds}"
+                    th:data-artist="${song.artist}" th:data-title="${song.titleAndVariant}"
+                    th:title="#{player.play}" th:attr="aria-label=#{player.play}"
+                    onclick="togglePlay(event, this)"><i class="fa-solid fa-play"></i></button>
+            <button type="button" class="playlist-button" th:unless="${playlists.empty}"
+                    th:data-songid="${song.uid}"
+                    th:title="#{playlist.add}" th:attr="aria-label=#{playlist.add}"
+                    onclick="togglePlaylistMenu(event, this)"><i class="fa-solid fa-plus"></i></button>
+            <div class="flip-card-front">
+                <img th:src="@{/images/} + ${song.uid} + '.jpg?w=400'" loading="lazy" alt=""/>
+                <div class="text">
+                    <h2 th:text="${song.artist}">Artist</h2>
+                    <p th:text="${song.titleAndVariant}">Title</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</th:block>
+
+<th:block th:fragment="rows">
+    <tr th:each="song : ${songs}" class="songlist" th:data-songid="${song.uid}">
+        <td th:unless="${lite}" class="play-cell">
+            <button type="button" class="play-button-small"
+                    th:data-songid="${song.uid}" th:data-start="${song.previewStartSeconds}"
+                    th:data-artist="${song.artist}" th:data-title="${song.titleAndVariant}"
+                    th:title="#{player.play}" th:attr="aria-label=#{player.play}"
+                    onclick="togglePlay(event, this)"><i class="fa-solid fa-play"></i></button>
+        </td>
+        <td>
+            <!-- Click on "Artist : Title" opens the song information popup -->
+            <button type="button" class="song-link" th:data-songid="${song.uid}"
+                    th:title="#{info.button}" onclick="openSongInfo(event, this)"><span
+                    class="song-link-artist" th:text="${song.artist}">Artist</span> : <span
+                    th:text="${song.titleAndVariant}">Title</span><i th:if="${song.duet}"
+                    class="fa-solid fa-user-group duo-inline" th:title="#{song.duet}"></i></button>
+        </td>
+    </tr>
+</th:block>
+</html>

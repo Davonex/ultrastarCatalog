@@ -2,7 +2,9 @@
 <html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
 <head>
     <title th:text="#{page.title}">Karaoke List</title>
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <meta charset="UTF-8"/>
+    <!-- Real mobile display: the page uses the width of the phone (no zoomed-out desktop page) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <link rel="stylesheet" type="text/css" th:href="@{/css/styles.css}">
     <!-- Flags of the "Language" filter (SVG, displayed the same on every system) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/css/flag-icons.min.css">
@@ -12,11 +14,6 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/ico/ultrastarCatalog-192.png">
     <link href="https://fonts.googleapis.com/css?family=Fjalla+One&display=swap" rel="stylesheet">
     <script src="https://kit.fontawesome.com/75aad18f9f.js" crossorigin="anonymous"></script>
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"
-            integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
-            crossorigin="anonymous"></script>
-    <script th:src="@{/js/jQuery.loadScroll.js}"></script>
-    <script th:src="@{/js/transition.js}"></script>
     <script th:inline="javascript">
         var playerLabels = {
             play: /*[[#{player.play}]]*/ 'Play',
@@ -29,68 +26,16 @@
             loading: /*[[#{playlist.loading}]]*/ 'Loading...',
             choose: /*[[#{playlist.choose}]]*/ 'Choose a playlist'
         };
-        var catalogLabels = {
-            found: /*[[#{list.found}]]*/ '{0} songs found.'
-        };
     </script>
     <script th:src="@{/js/player.js}"></script>
     <script th:src="@{/js/playlist.js}"></script>
     <script th:src="@{/js/filters.js}"></script>
-    <script>
-        // "i" button of the song cards (and "Artist : Title" in the list): shows the song information popup
-        function openSongInfo(event, btn) {
-            event.stopPropagation();
-            event.preventDefault();
-            var songId = btn.getAttribute('data-songid');
-            $.ajax({url: '/songinfo/' + encodeURIComponent(songId)}).done(function (content) {
-                $('#modalContent').html(content);
-                document.getElementById('modalLayer').style.display = 'block';
-            });
-        }
-        function closeModal() {
-            document.getElementById('modalLayer').style.display = 'none';
-        }
-        // Click on the dark background or Escape key: close the popup
-        window.onclick = function(event) {
-            if (event.target == document.getElementById('modalLayer')) {
-                closeModal();
-            }
-        }
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        });
-        function toggleFavorite(event, icon) {
-            event.stopPropagation();
-            const card = icon.closest(".flip-card-inner");
-            const songId = card.getAttribute("data-songid");
-            let favorites = JSON.parse(localStorage.getItem("favorites")) || [];
-            const index = favorites.indexOf(songId);
-            if (index === -1) {
-              favorites.push(songId);
-              icon.classList.remove("fa-regular");
-              icon.classList.add("fa-solid");
-            } else {
-              favorites.splice(index, 1);
-              icon.classList.remove("fa-solid");
-              icon.classList.add("fa-regular");
-            }
-            localStorage.setItem("favorites", JSON.stringify(favorites));
-        }
-        document.addEventListener("DOMContentLoaded", function () {
-            const favorites = JSON.parse(localStorage.getItem("favorites")) || [];
-            document.querySelectorAll(".flip-card-inner").forEach(card => {
-                const icon = card.querySelector(".favorite-icon");
-                if (favorites.includes(card.getAttribute("data-songid"))) {
-                    icon.classList.remove("fa-regular");
-                    icon.classList.add("fa-solid");
-                }
-            });
-        });
-    </script>
+    <script th:src="@{/js/catalog.js}"></script>
 </head>
 <body>
+<!-- Everything inside #app is replaced when filters, sort or search change (no page reload),
+     so the song being played and the mini player at the bottom are not interrupted. -->
+<div id="app">
 <header class="catalog-header">
     <!-- Search + current filters. The filter screens write their choices into the hidden fields. -->
     <form id="catalogForm" class="catalog-form" method="get" action="/">
@@ -108,6 +53,8 @@
         <input type="hidden" id="f-dir" name="dir" th:value="${dir}"/>
         <input type="hidden" id="f-view" name="view" value="list" th:disabled="${view != 'list'}"/>
         <input type="hidden" id="f-fav" name="fav" value="1" th:disabled="${!fav}"/>
+        <!-- ids of the favorites (stored in this browser), filled in by catalog.js when "Favorites" is on -->
+        <input type="hidden" id="f-favs" name="favs" value="" th:disabled="${!fav}"/>
     </form>
 
     <!-- Filters: each button opens a selection screen -->
@@ -136,8 +83,8 @@
 
     <!-- Sort, number of songs, grid / list -->
     <div class="toolbar">
-        <!-- Two buttons: the sort field (menu) and the order (A→Z / Z→A, 1→9 / 9→1 for the year) -->
-        <div class="sort-group" th:with="numeric=${sort == 'year'}">
+        <!-- Two buttons: the sort field (menu) and the order (A→Z / Z→A, 1→9 / 9→1 for year and date) -->
+        <div class="sort-group" th:with="numeric=${sort == 'year' or sort == 'added'}">
             <div class="sort-wrapper">
                 <button type="button" class="sort-button" onclick="toggleSortMenu(event)" th:title="#{sort.by}"
                         th:attr="aria-label=#{sort.by}">
@@ -146,7 +93,8 @@
                 </button>
                 <div class="sort-menu" id="sortMenu" hidden>
                     <div class="sort-menu-title" th:text="#{sort.by}">Sort by</div>
-                    <button type="button" class="sort-item" th:each="s : ${ {'artist','title','language','year'} }"
+                    <button type="button" class="sort-item"
+                            th:each="s : ${ {'artist','title','language','year','added'} }"
                             th:attr="data-sort=${s}" th:classappend="${s == sort} ? 'current'"
                             onclick="chooseSort(this.getAttribute('data-sort'))">
                         <i th:class="${sortIcons.get(s)} + ' sort-item-icon'"></i>
@@ -163,7 +111,7 @@
             </button>
         </div>
         <div class="result-info">
-            <span id="resultCount" class="result-count" th:text="#{list.found(${songs.size()})}">n songs found.</span>
+            <span id="resultCount" class="result-count" th:text="#{list.found(${total})}">n songs found.</span>
             <a href="/" class="clear-filters" th:if="${hasFilters}" onclick="clearAllFilters(event)"><i
                     class="fa-solid fa-xmark"></i> <span th:text="#{filter.clearAll}">Clear filters</span></a>
         </div>
@@ -174,72 +122,62 @@
     </div>
 </header>
 
-<div class="main">
+<main class="results">
     <div id="emptyState" class="empty-state" th:hidden="${!songs.empty}">
         <span th:text="#{page.noSongs}"> No Songs Available </span>
     </div>
-    <div th:unless="${view} == 'list'" class="flip-card" th:each="song : ${songs}">
-        <div class="flip-card-inner" th:data-songid="${song.uid}">
-            <button type="button" class="info-button"
-                    th:data-songid="${song.uid}"
-                    th:title="#{info.button}" th:attr="aria-label=#{info.button}"
-                    onclick="openSongInfo(event, this)"><i class="fa-solid fa-info"></i></button>
-            <i class="fa-regular fa-star favorite-icon" onclick="toggleFavorite(event, this)"></i>
-            <button type="button" class="play-button" th:unless="${lite}"
-                    th:data-songid="${song.uid}" th:data-start="${song.previewStartSeconds}"
-                    th:title="#{player.play}" th:attr="aria-label=#{player.play}"
-                    onclick="togglePlay(event, this)"><i class="fa-solid fa-play"></i></button>
-            <button type="button" class="playlist-button" th:unless="${playlists.empty}"
-                    th:data-songid="${song.uid}"
-                    th:title="#{playlist.add}" th:attr="aria-label=#{playlist.add}"
-                    onclick="togglePlaylistMenu(event, this)"><i class="fa-solid fa-plus"></i></button>
-            <div class="flip-card-front">
-                <img th:src="@{/images/} + ${song.uid} + '.jpg'" loading="lazy"/>
-                <div class="text">
-                    <h2 th:text=" ${song.artist}">Artist</h2>
-                    <p th:text="${song.titleAndVariant}">Title</p>
-                </div>
-            </div>
-        </div>
+    <div id="songGrid" class="song-grid" th:unless="${view == 'list'}">
+        <th:block th:replace="~{songs :: cards}"></th:block>
     </div>
-    <table th:if="${view} == 'list'" th:unless="${songs.empty}" class="songlist">
+    <table th:if="${view == 'list'}" th:unless="${songs.empty}" class="songlist">
         <thead>
         <tr>
             <th th:unless="${lite}" class="songlistHeader"></th>
             <th class="songlistHeader" th:text="#{list.artistAndTitle}">Artist : Title</th>
         </tr>
         </thead>
-        <tbody>
-        <tr th:each="song : ${songs}" class="songlist" th:data-songid="${song.uid}">
-            <td th:unless="${lite}" class="play-cell">
-                <button type="button" class="play-button-small"
-                        th:data-songid="${song.uid}" th:data-start="${song.previewStartSeconds}"
-                        th:title="#{player.play}" th:attr="aria-label=#{player.play}"
-                        onclick="togglePlay(event, this)"><i class="fa-solid fa-play"></i></button>
-            </td>
-            <td>
-                <!-- Click on "Artist : Title" opens the song information popup -->
-                <button type="button" class="song-link" th:data-songid="${song.uid}"
-                        th:title="#{info.button}" onclick="openSongInfo(event, this)"><span
-                        class="song-link-artist" th:text="${song.artist}">Artist</span> : <span
-                        th:text="${song.titleAndVariant}">Title</span></button>
-            </td>
-        </tr>
+        <tbody id="songRows">
+        <th:block th:replace="~{songs :: rows}"></th:block>
         </tbody>
     </table>
-    <div id="modalLayer" class="modal">
-        <div class="modal-content">
-            <button type="button" class="modal-close" onclick="closeModal();"
-                    th:title="#{info.close}" th:attr="aria-label=#{info.close}">&times;</button>
-            <div id="modalContent"><span th:text="#{song.info}">Song-Info</span></div>
-        </div>
+    <!-- Infinite scroll: when this element becomes visible, the next page of songs is loaded -->
+    <div id="loadMore" class="load-more" th:if="${hasMore}" th:attr="data-next-page=${nextPage}">
+        <i class="fa-solid fa-spinner fa-spin"></i>
     </div>
-</div>
+</main>
 
 <!-- Selection screens of the filters (see filters.html) -->
 <th:block th:replace="~{filters :: filterModal('language', #{filter.language}, 'fa-solid fa-globe', ${languageOptions}, ${selLanguages})}"></th:block>
 <th:block th:replace="~{filters :: filterModal('decade', #{filter.decade}, 'fa-solid fa-calendar-days', ${decadeOptions}, ${selDecades})}"></th:block>
 <th:block th:replace="~{filters :: filterModal('tags', #{filter.tags}, 'fa-solid fa-tags', ${tagOptions}, ${selTags})}"></th:block>
 <th:block th:replace="~{filters :: filterModal('playlist', #{filter.playlists}, 'fa-solid fa-list-ul', ${playlistOptions}, ${selPlaylists})}"></th:block>
+</div>
+
+<!-- Song information popup -->
+<div id="modalLayer" class="modal">
+    <div class="modal-content">
+        <button type="button" class="modal-close" onclick="closeModal();"
+                th:title="#{info.close}" th:attr="aria-label=#{info.close}">&times;</button>
+        <div id="modalContent"><span th:text="#{song.info}">Song-Info</span></div>
+    </div>
+</div>
+
+<!-- Mini player: the song being played (stays visible while scrolling and changing filters) -->
+<div id="nowPlaying" class="now-playing" hidden>
+    <img class="np-cover" src="/img/no-cover.svg" alt=""/>
+    <div class="np-info">
+        <div class="np-title"><span class="np-artist">Artist</span> : <span class="np-song">Title</span></div>
+        <div class="np-progress">
+            <span class="np-time">0:00</span>
+            <input type="range" class="np-seek" min="0" max="1000" value="0" step="1"
+                   th:attr="aria-label=#{player.position}"/>
+            <span class="np-duration">0:00</span>
+        </div>
+    </div>
+    <button type="button" class="np-toggle" th:title="#{player.pause}" th:attr="aria-label=#{player.pause}"><i
+            class="fa-solid fa-pause"></i></button>
+    <button type="button" class="np-close" th:title="#{player.stop}" th:attr="aria-label=#{player.stop}"><i
+            class="fa-solid fa-xmark"></i></button>
+</div>
 </body>
 </html>

@@ -122,6 +122,7 @@ public class Song {
         this.path = ultrastarFile.getPath();
         this.textFile = ultrastarFile.getFilename();
         this.lastUpdate = ultrastarFile.getLastUpdate();
+        this.dateAdded = ultrastarFile.getAdded();
 
         this.gap = ultrastarFile.getGap();
         this.videogap = ultrastarFile.getVideogap();
@@ -540,6 +541,24 @@ public class Song {
 
     public void setProvidedby(String providedby) {
         this.providedby = providedby;
+    }
+
+    /**
+     * A duet: the txt file names two singers (#P1/#P2 or #DUETSINGERP1/2), or the song has the "Duet" tag.
+     */
+    public boolean isDuet() {
+        if (StringUtils.isNotBlank(p1) || StringUtils.isNotBlank(p2)) {
+            return true;
+        }
+        return StringUtils.isNotBlank(tags) && TagsEnum.getTagsByString(tags).contains(TagsEnum.DUET);
+    }
+
+    /** "Singer 1 / Singer 2" for a duet when the names are known, empty otherwise. */
+    public String getDuetSingers() {
+        if (StringUtils.isBlank(p1) && StringUtils.isBlank(p2)) {
+            return StringUtils.EMPTY;
+        }
+        return StringUtils.trimToEmpty(p1) + " / " + StringUtils.trimToEmpty(p2);
     }
 
     /**

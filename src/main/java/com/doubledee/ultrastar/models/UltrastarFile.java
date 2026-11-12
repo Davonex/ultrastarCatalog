@@ -6,6 +6,8 @@ import org.apache.commons.lang3.StringUtils;
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Date;
 
 public class UltrastarFile {
@@ -21,6 +23,8 @@ public class UltrastarFile {
     private String path;
     private String filename;
     private Date lastUpdate;
+    /** When the song arrived on the disk: creation date of its folder (falls back to the txt date). */
+    private Date added;
     private String comment;
     private String gap;
     private String edition;
@@ -61,9 +65,9 @@ public class UltrastarFile {
         this.filename = file.getName();
         this.path = file.getParent().replace(SongImporter.SONGS_PATH, StringUtils.EMPTY);
         this.lastUpdate = new Date(file.lastModified());
-        try {
-            InputStreamReader inputStreamReader = new InputStreamReader(new FileInputStream(file), encoding);
-            BufferedReader br = new BufferedReader(inputStreamReader);
+        this.added = folderCreationDate(file);
+        // try-with-resources: the txt must be closed, otherwise Windows keeps it locked
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(file), encoding))) {
             String line;
             while ((line = br.readLine()) != null) {
                 line = line.replace(UTF8_BOM, StringUtils.EMPTY);
@@ -174,6 +178,31 @@ public class UltrastarFile {
 
     public Date getLastUpdate() {
         return lastUpdate;
+    }
+
+    public Date getAdded() {
+        return added;
+    }
+
+    public void setAdded(Date added) {
+        this.added = added;
+    }
+
+    /**
+     * Creation date of the song folder: on Windows it is the day the folder was copied or unzipped on this disk,
+     * and it does not change when the txt is edited later.
+     */
+    static Date folderCreationDate(File file) {
+        File folder = file.getParentFile();
+        if (folder != null) {
+            try {
+                BasicFileAttributes attributes = Files.readAttributes(folder.toPath(), BasicFileAttributes.class);
+                return new Date(attributes.creationTime().toMillis());
+            } catch (IOException | RuntimeException e) {
+                // fall back to the txt date below
+            }
+        }
+        return new Date(file.lastModified());
     }
 
     public void setLastUpdate(Date lastUpdate) {

@@ -33,7 +33,7 @@
                          onerror="this.style.visibility='hidden'"/>
                     <span th:case="'playlist'" class="tile-mosaic"
                           th:classappend="'covers-' + ${#lists.size(o.covers)}">
-                        <img th:each="uid : ${o.covers}" th:src="@{/images/} + ${uid} + '.jpg'" alt=""
+                        <img th:each="uid : ${o.covers}" th:src="@{/images/} + ${uid} + '.jpg?w=240'" alt=""
                              loading="lazy" onerror="this.style.visibility='hidden'"/>
                         <i th:if="${o.covers.empty}" class="fa-solid fa-list-ul"></i>
                     </span>

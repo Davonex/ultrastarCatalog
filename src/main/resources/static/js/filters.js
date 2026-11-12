@@ -1,7 +1,7 @@
 /*
  * Top of the catalog: filter selection screens (Language, Decade, Tags, Playlists), sort menu,
- * favorites on/off and grid/list view. All of them write into the form #catalogForm and send it,
- * so the URL always describes the current selection.
+ * favorites on/off and grid/list view. All of them write into the form #catalogForm and send it
+ * (through catalog.js, without reloading the page), so the URL always describes the current selection.
  */
 (function () {
     var openModal = null;       // filter screen currently open
@@ -11,13 +11,15 @@
         return document.getElementById('catalogForm');
     }
 
-    // Sends the form; an empty search field is left out of the URL
+    // Sends the form (catalog.js loads the result without reloading the page)
     function submitForm() {
-        var search = document.getElementById('search');
-        if (search && !search.value.trim()) {
-            search.disabled = true;
+        document.body.classList.remove('no-scroll');
+        openModal = null;
+        if (window.submitCatalogForm) {
+            window.submitCatalogForm();
+        } else {
+            form().submit();
         }
-        form().submit();
     }
 
     function selectedValues(modal) {
@@ -63,7 +65,7 @@
         }
     };
 
-    // Writes the chosen values into the hidden fields of the form, then reloads the catalog
+    // Writes the chosen values into the hidden fields of the form, then loads the catalog
     window.applyFilter = function () {
         if (!openModal) {
             return;
@@ -78,6 +80,7 @@
             input.value = value;
             container.appendChild(input);
         });
+        openModal.hidden = true;
         submitForm();
     };
 
@@ -95,7 +98,8 @@
         menu.hidden = !menu.hidden;
     };
 
-    // Sort field (artist, title, language, year): the order (asc/desc) is kept
+    // Sort field (artist, title, language, year, added): the order (asc/desc) is kept,
+    // except for "added" (most recent first)
     window.chooseSort = function (sort) {
         var sortField = document.getElementById('f-sort');
         if (sortField.value === sort) {
@@ -103,6 +107,9 @@
             return;
         }
         sortField.value = sort;
+        if (sort === 'added') {
+            document.getElementById('f-dir').value = 'desc';
+        }
         submitForm();
     };
 
@@ -117,6 +124,7 @@
     window.toggleFavoritesFilter = function () {
         var fav = document.getElementById('f-fav');
         fav.disabled = !fav.disabled;
+        document.getElementById('f-favs').disabled = fav.disabled;
         submitForm();
     };
 
@@ -134,60 +142,12 @@
         if (!document.getElementById('f-view').disabled) {
             url += '&view=list';
         }
-        window.location.href = url;
+        if (window.navigateCatalog) {
+            window.navigateCatalog(url, true);
+        } else {
+            window.location.href = url;
+        }
     };
-
-    // Favorites are stored in this browser: with "Favorites" on, hide the other songs
-    function applyFavoritesFilter() {
-        var fav = document.getElementById('f-fav');
-        if (!fav || fav.disabled) {
-            return;
-        }
-        var favorites;
-        try {
-            favorites = JSON.parse(localStorage.getItem('favorites')) || [];
-        } catch (e) {
-            favorites = [];
-        }
-        var visible = 0;
-        document.querySelectorAll('.flip-card').forEach(function (card) {
-            var inner = card.querySelector('.flip-card-inner');
-            var keep = inner && favorites.indexOf(inner.getAttribute('data-songid')) !== -1;
-            card.style.display = keep ? '' : 'none';
-            if (keep) { visible++; }
-        });
-        document.querySelectorAll('tr.songlist[data-songid]').forEach(function (row) {
-            var keep = favorites.indexOf(row.getAttribute('data-songid')) !== -1;
-            row.style.display = keep ? '' : 'none';
-            if (keep) { visible++; }
-        });
-        var count = document.getElementById('resultCount');
-        if (count && window.catalogLabels) {
-            count.textContent = window.catalogLabels.found.replace('{0}', visible);
-        }
-        var empty = document.getElementById('emptyState');
-        if (empty) {
-            empty.hidden = visible > 0;
-        }
-        var table = document.querySelector('table.songlist');
-        if (table) {
-            table.style.display = visible > 0 ? '' : 'none';
-        }
-    }
-
-    document.addEventListener('DOMContentLoaded', function () {
-        applyFavoritesFilter();
-        // Search with the Enter key or the magnifier: same rule for the empty search field
-        var f = form();
-        if (f) {
-            f.addEventListener('submit', function () {
-                var search = document.getElementById('search');
-                if (search && !search.value.trim()) {
-                    search.disabled = true;
-                }
-            });
-        }
-    });
 
     // Click outside: close the sort menu; click on the dark background: close the filter screen
     document.addEventListener('click', function (e) {

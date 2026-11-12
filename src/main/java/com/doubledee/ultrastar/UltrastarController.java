@@ -1,6 +1,7 @@
 package com.doubledee.ultrastar;
 
 import com.doubledee.ultrastar.db.MsAccessDb;
+import com.doubledee.ultrastar.covers.CoverService;
 import com.doubledee.ultrastar.filters.FilterOptions;
 import com.doubledee.ultrastar.i18n.Labels;
 import com.doubledee.ultrastar.importer.SongImporter;
@@ -20,8 +21,10 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.tomcat.util.http.fileupload.IOUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.MediaTypeFactory;
@@ -39,6 +42,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -56,6 +60,9 @@ public class UltrastarController {
 
     @Autowired
     FilterOptions filterOptions;
+
+    @Autowired
+    CoverService coverService;
 
     public static final Map<Integer, List<Pair<List<Integer>, List<Integer>>>> PERMUTATION_MAP = initPermutationMap();
 
@@ -80,20 +87,27 @@ public class UltrastarController {
         return returnMap;
     }
 
-    /** Sort criteria of the catalog ("sort" URL parameter). */
-    private static final List<String> SORTS = List.of("artist", "title", "year", "language");
+    /** Sort criteria of the catalog ("sort" URL parameter). "added" = most recent txt files. */
+    private static final List<String> SORTS = List.of("artist", "title", "year", "language", "added");
 
-    /** Icon of each sort criterion: singer, music note, calendar, globe (same globe as the Language filter). */
+    /** Icon of each sort criterion: singer, music note, calendar, globe (same globe as the Language filter), clock. */
     private static final Map<String, String> SORT_ICONS = Map.of(
             "artist", "fa-solid fa-microphone",
             "title", "fa-solid fa-music",
             "year", "fa-solid fa-calendar-days",
-            "language", "fa-solid fa-globe");
+            "language", "fa-solid fa-globe",
+            "added", "fa-solid fa-clock-rotate-left");
+
+    /** Number of songs per page: the next pages are loaded while scrolling (page=1, 2... with fragment=1). */
+    static final int PAGE_SIZE_CARDS = 60;
+    static final int PAGE_SIZE_ROWS = 200;
 
     /**
      * The catalog: search + multiple-choice filters + sort. Several values of one filter are combined with OR
      * (French OR English), different filters with AND (language AND decade AND tags AND playlists).
-     * Favorites (fav=1) are kept in the browser (localStorage) and filtered there.
+     * Favorites are kept in the browser: with fav=1 the page sends their ids in "favs".
+     * Only one page of songs is rendered; with fragment=1 only the songs of the requested page are returned
+     * (infinite scroll), and the response header X-Has-More tells whether another page exists.
      */
     @GetMapping({"", "/"})
     public String catalog(@RequestParam(name = "searchterm", required = false, defaultValue = "") String searchterm,
@@ -105,7 +119,10 @@ public class UltrastarController {
                           @RequestParam(name = "dir", required = false, defaultValue = "asc") String dir,
                           @RequestParam(name = "view", required = false, defaultValue = "") String view,
                           @RequestParam(name = "fav", required = false, defaultValue = "") String fav,
-                          Model model) {
+                          @RequestParam(name = "favs", required = false) List<String> favs,
+                          @RequestParam(name = "page", required = false, defaultValue = "0") int page,
+                          @RequestParam(name = "fragment", required = false, defaultValue = "") String fragment,
+                          Model model, HttpServletResponse response) {
         List<String> selLanguages = clean(languages);
         List<String> selDecades = clean(decades);
         selDecades.removeIf(d -> d.equalsIgnoreCase(Decade.ALL.getDisplayName()));
@@ -114,6 +131,8 @@ public class UltrastarController {
         List<String> selPlaylists = clean(playlists);
         sort = SORTS.contains(sort) ? sort : "artist";
         boolean descending = "desc".equalsIgnoreCase(dir);
+        boolean favoritesOnly = "1".equals(fav);
+        boolean listView = "list".equals(view);
 
         List<Song> songs = librarySongs();
         if (!selPlaylists.isEmpty()) {
@@ -124,6 +143,10 @@ public class UltrastarController {
                                 .flatMap(p -> filterOptions.songsOf(p, byArtistAndTitle).stream())
                                 .distinct()
                                 .collect(Collectors.toList());
+        }
+        if (favoritesOnly) {
+            Set<String> favoriteIds = new HashSet<>(clean(favs));
+            songs = songs.stream().filter(song -> favoriteIds.contains(song.getUid())).collect(Collectors.toList());
         }
         songs = search(searchterm, songs);
         if (!selLanguages.isEmpty()) {
@@ -139,8 +162,25 @@ public class UltrastarController {
         }
         songs = sortSongs(songs, sort, descending);
 
-        boolean favoritesOnly = "1".equals(fav);
-        model.addAttribute("songs", songs);
+        // One page of songs
+        int pageSize = listView ? PAGE_SIZE_ROWS : PAGE_SIZE_CARDS;
+        int total = songs.size();
+        int from = Math.min(Math.max(page, 0) * pageSize, total);
+        int to = Math.min(from + pageSize, total);
+        boolean hasMore = to < total;
+        model.addAttribute("songs", songs.subList(from, to));
+        model.addAttribute("total", total);
+        model.addAttribute("hasMore", hasMore);
+        model.addAttribute("nextPage", Math.max(page, 0) + 1);
+        model.addAttribute("view", listView ? "list" : "");
+        model.addAttribute("playlists",
+                           UltrastarApplication.PLAYLISTS == null ? Map.of() : UltrastarApplication.PLAYLISTS);
+        model.addAttribute("lite", isLite());
+        if ("1".equals(fragment)) {
+            response.setHeader("X-Has-More", String.valueOf(hasMore));
+            return listView ? "songs :: rows" : "songs :: cards";
+        }
+
         model.addAttribute("searchterm", searchterm);
         model.addAttribute("selLanguages", selLanguages);
         model.addAttribute("selDecades", selDecades);
@@ -149,7 +189,6 @@ public class UltrastarController {
         model.addAttribute("sort", sort);
         model.addAttribute("sortIcons", SORT_ICONS);
         model.addAttribute("dir", descending ? "desc" : "asc");
-        model.addAttribute("view", "list".equals(view) ? "list" : "");
         model.addAttribute("fav", favoritesOnly);
         model.addAttribute("hasFilters", StringUtils.isNotBlank(searchterm) || !selLanguages.isEmpty()
                 || !selDecades.isEmpty() || !selTags.isEmpty() || !selPlaylists.isEmpty() || favoritesOnly);
@@ -157,9 +196,6 @@ public class UltrastarController {
         model.addAttribute("decadeOptions", filterOptions.decades());
         model.addAttribute("tagOptions", filterOptions.tags());
         model.addAttribute("playlistOptions", filterOptions.playlists());
-        model.addAttribute("playlists",
-                           UltrastarApplication.PLAYLISTS == null ? Map.of() : UltrastarApplication.PLAYLISTS);
-        model.addAttribute("lite", isLite());
         return "index";
     }
 
@@ -228,8 +264,8 @@ public class UltrastarController {
     }
 
     /**
-     * Sorts by artist, title, year or language, ascending or descending.
-     * Songs without year (or without language) always stay at the end.
+     * Sorts by artist, title, year, language or date of the txt file ("added"), ascending or descending.
+     * Songs without year, language or date always stay at the end.
      */
     private List<Song> sortSongs(List<Song> songs, String sort, boolean descending) {
         Comparator<Song> byArtist = Comparator.comparing((Song s) -> StringUtils.defaultString(s.getArtistNormalized()))
@@ -250,6 +286,17 @@ public class UltrastarController {
                 withoutKey.sort(byArtist);
                 sorted = new ArrayList<>(withKey);
                 sorted.addAll(withoutKey);
+            }
+            case "added" -> {
+                // date the song folder arrived on the disk (the txt date only when it is unknown)
+                Function<Song, Date> added = s -> s.getDateAdded() != null ? s.getDateAdded() : s.getLastUpdate();
+                Comparator<Song> byDate = Comparator.comparing((Song s) -> added.apply(s).getTime());
+                List<Song> withDate = new ArrayList<>(sorted.stream().filter(s -> added.apply(s) != null).toList());
+                List<Song> withoutDate = new ArrayList<>(sorted.stream().filter(s -> added.apply(s) == null).toList());
+                withDate.sort((descending ? byDate.reversed() : byDate).thenComparing(byArtist));
+                withoutDate.sort(byArtist);
+                sorted = new ArrayList<>(withDate);
+                sorted.addAll(withoutDate);
             }
             default -> sorted.sort(descending ? byArtist.reversed() : byArtist);
         }
@@ -320,19 +367,28 @@ public class UltrastarController {
         return song -> song.getTitleNormalized().contains(normalizedSearch);
     }
 
-    @RequestMapping(value = "/images/{file}", method = RequestMethod.GET)
-    public void getImageAsByteArray(HttpServletResponse response,
-                                    @PathVariable("file") String file) throws IOException {
-        String uid = file.replace(".jpg", "");
-        Song song = UltrastarApplication.SONGS.get(uid);
-        if (song != null) {
-            String cover = song.getCover() == null ? song.getArtist() + " - " + song.getTitle() + " [co].jpg" : song.getCover();
-            InputStream in = new BufferedInputStream(
-                    new FileInputStream(song.getPath() + File.separator + cover));
-            response.setContentType(MediaType.IMAGE_JPEG_VALUE);
-            IOUtils.copy(in, response.getOutputStream());
-            in.close();
+    /**
+     * Cover of a song. ?w=120/240/400 gives a small copy (much lighter for phones), cached on disk.
+     * Browsers keep the images for 7 days. A song without cover gets the default picture (no error).
+     */
+    @GetMapping("/images/{file}")
+    public ResponseEntity<Resource> getImage(@PathVariable("file") String file,
+                                             @RequestParam(name = "w", required = false) Integer width) {
+        Song song = UltrastarApplication.SONGS == null ? null : UltrastarApplication.SONGS.get(file.replace(".jpg", ""));
+        File image = coverService.image(song, width);
+        if (image == null) {
+            return ResponseEntity.ok()
+                                 .cacheControl(CacheControl.maxAge(1, TimeUnit.DAYS))
+                                 .contentType(MediaType.valueOf("image/svg+xml"))
+                                 .body(new ClassPathResource("static/img/no-cover.svg"));
         }
+        MediaType type = MediaTypeFactory.getMediaType(image.getName()).orElse(MediaType.IMAGE_JPEG);
+        // Last-Modified lets Spring answer "304 Not Modified" when the browser already has the image
+        return ResponseEntity.ok()
+                             .cacheControl(CacheControl.maxAge(7, TimeUnit.DAYS))
+                             .lastModified(image.lastModified())
+                             .contentType(type)
+                             .body(new FileSystemResource(image));
     }
 
     /**

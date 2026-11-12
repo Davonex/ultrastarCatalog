@@ -59,11 +59,10 @@
             <version>1.0.3</version>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/org.spockframework/spock-core -->
+        <!-- Tests: JUnit 5, AssertJ, MockMvc (run with "mvnw test") -->
         <dependency>
-            <groupId>org.spockframework</groupId>
-            <artifactId>spock-core</artifactId>
-            <version>2.4-M1-groovy-4.0</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
 
@@ -126,8 +125,13 @@
                             <mainClass>test.App</mainClass>
                             <addDefaultImplementationEntries>
                                 true
-                            </addDefaultImplementationEntries>  
+                            </addDefaultImplementationEntries>
                         </manifest>
+                        <manifestEntries>
+                            <!-- Java 24+: allows Tomcat to load its native library without the
+                                 "restricted method" warning at startup -->
+                            <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                        </manifestEntries>
                     </archive>
                 </configuration>
             </plugin>

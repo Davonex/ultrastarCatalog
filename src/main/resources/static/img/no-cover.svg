@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!-- Default picture for songs without a cover -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#314857"/>
+      <stop offset="1" stop-color="#4d5085"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg)"/>
+  <g fill="#ffffff" fill-opacity="0.35">
+    <!-- two eighth notes -->
+    <rect x="168" y="96" width="14" height="160"/>
+    <rect x="268" y="76" width="14" height="160"/>
+    <polygon points="168,96 282,76 282,112 168,132"/>
+    <ellipse cx="146" cy="258" rx="36" ry="27" transform="rotate(-20 146 258)"/>
+    <ellipse cx="246" cy="238" rx="36" ry="27" transform="rotate(-20 246 238)"/>
+  </g>
+</svg>
